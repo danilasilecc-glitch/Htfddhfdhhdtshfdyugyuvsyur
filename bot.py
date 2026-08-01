@@ -75,7 +75,7 @@ if cursor.fetchone()[0] == 0:
         ("Кираса героя", "chest", "defense", 6, 250),
         ("Поножи титана", "legs", "defense", 4, 180),
         ("Сапоги ветра", "boots", "defense", 3, 120),
-        ("Меч дракона", "weapon", "attack", 8, 350),
+        ("Меч дракона", "weapon", "attack", 8, 350)
     ]
     for item in items:
         cursor.execute("INSERT INTO shop (name, type, stat, value, price) VALUES (?, ?, ?, ?, ?)", item)
@@ -106,7 +106,6 @@ def update_exp(user_id, exp_gain):
         level += 1
         exp_to_next = int(exp_to_next * 1.5)
         leveled_up = True
-        # Бонусы за уровень
         cursor.execute(
             "UPDATE players SET max_hp = max_hp + 10, attack = attack + 2, defense = defense + 1 WHERE user_id = ?",
             (user_id,)
@@ -190,17 +189,17 @@ PROTECT_COMBOS = {
     "head_chest": {"head": True, "chest": True, "belt": False, "hands": False, "legs": False},
     "chest_belt": {"head": False, "chest": True, "belt": True, "hands": False, "legs": False},
     "chest_hands": {"head": False, "chest": True, "belt": False, "hands": True, "legs": False},
-    "belt_legs": {"head": False, "chest": False, "belt": True, "hands": False, "legs": True},
+    "belt_legs": {"head": False, "chest": False, "belt": True, "hands": False, "legs": True}
 }
 
 ATTACK_COMBOS = {
     "head_chest": ["head", "chest"],
     "chest_belt": ["chest", "belt"],
     "chest_hands": ["chest", "hands"],
-    "belt_legs": ["belt", "legs"],
+    "belt_legs": ["belt", "legs"]
 }
 
-COMBAT_STATE = {}  # user_id -> {opponent, step, protect_choice, attack_choice}
+COMBAT_STATE = {}
 
 def start_battle(player1, player2):
     COMBAT_STATE[player1] = {"opponent": player2, "step": "protect", "protect_choice": None, "attack_choice": None}
@@ -253,15 +252,8 @@ def handle(call):
     chat_id = call.message.chat.id
     msg_id = call.message.message_id
 
-    # === ГЛАВНОЕ МЕНЮ ===
     if data == "back_main":
-        bot.edit_message_text(
-            "🎮 **Главное меню**",
-            chat_id,
-            msg_id,
-            parse_mode='Markdown',
-            reply_markup=main_menu()
-        )
+        bot.edit_message_text("🎮 **Главное меню**", chat_id, msg_id, parse_mode='Markdown', reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
 
@@ -332,11 +324,9 @@ def handle(call):
         if player[6] < price:
             bot.answer_callback_query(call.id, f"❌ Не хватает монет! Нужно {price}")
             return
-        # Проверяем, есть ли уже такой предмет
         cursor.execute(f"SELECT {type_} FROM players WHERE user_id = ?", (user_id,))
         current = cursor.fetchone()[0]
         if current:
-            # Продаём старый за полцены
             cursor.execute("SELECT price FROM shop WHERE name = ?", (current,))
             old_price = cursor.fetchone()[0]
             if old_price:
@@ -344,8 +334,7 @@ def handle(call):
         cursor.execute(f"UPDATE players SET coins = coins - ?, {type_} = ? WHERE user_id = ?", (price, name, user_id))
         conn.commit()
         bot.answer_callback_query(call.id, f"✅ Куплено: {name}!")
-        # Обновляем сообщение
-        handle(call)  # Перезапускаем обработчик для обновления меню
+        handle(call)
         return
 
     if data == "top":
@@ -419,13 +408,13 @@ def handle(call):
             return
         members = clan[2].split(",") if clan[2] else []
         text = f"📋 **Клан: {clan[0]}**\n\n👑 Лидер: {clan[1]}\n👥 Участников: {len(members)}\n\nСписок участников:\n"
-        for m in members[:10]:  # Показываем первых 10
+        for m in members[:10]:
             cursor.execute("SELECT display_name FROM players WHERE user_id = ?", (int(m),))
             name = cursor.fetchone()
             if name:
                 text += f"- {name[0]}\n"
         kb = InlineKeyboardMarkup()
-        if len(members) < 2:  # Если меньше 2 участников, можно вступить
+        if len(members) < 2:
             kb.add(InlineKeyboardButton("📥 Вступить в клан", callback_data=f"join_clan_{clan_id}"))
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="clan_list"))
         bot.edit_message_text(text, chat_id, msg_id, parse_mode='Markdown', reply_markup=kb)
@@ -453,20 +442,12 @@ def handle(call):
         bot.answer_callback_query(call.id)
         return
 
-    # === ДУЭЛЬ ===
     if data == "duel":
-        bot.edit_message_text(
-            "⚔️ **Дуэль**\n\nНайди противника и сразись!",
-            chat_id,
-            msg_id,
-            parse_mode='Markdown',
-            reply_markup=duel_menu()
-        )
+        bot.edit_message_text("⚔️ **Дуэль**\n\nНайди противника и сразись!", chat_id, msg_id, parse_mode='Markdown', reply_markup=duel_menu())
         bot.answer_callback_query(call.id)
         return
 
     if data == "find_opponent":
-        # Ищем противника среди всех игроков
         cursor.execute("SELECT user_id, display_name FROM players WHERE user_id != ?", (user_id,))
         opponents = cursor.fetchall()
         if not opponents:
@@ -485,14 +466,11 @@ def handle(call):
         if opponent_id == user_id:
             bot.answer_callback_query(call.id, "❌ Нельзя вызвать себя")
             return
-        # Проверяем, не в бою ли уже
         if user_id in COMBAT_STATE or opponent_id in COMBAT_STATE:
             bot.answer_callback_query(call.id, "❌ Один из игроков уже в бою")
             return
-        # Начинаем бой
         text = start_battle(user_id, opponent_id)
         bot.send_message(chat_id, text, parse_mode='Markdown')
-        # Запрашиваем у первого защиту
         ask_protect(user_id, chat_id)
         bot.answer_callback_query(call.id)
         return
@@ -506,19 +484,35 @@ def handle(call):
             bot.answer_callback_query(call.id, "❌ Ты не в бою")
         return
 
-    # === ЗАЩИТА ===
     if data.startswith("protect_"):
         if user_id not in COMBAT_STATE:
             bot.answer_callback_query(call.id, "❌ Ты не в бою")
             return
         choice = data.split("_")[1]
         COMBAT_STATE[user_id]["protect_choice"] = choice
-        # Проверяем, оба ли выбрали защиту
         opponent_id = COMBAT_STATE[user_id]["opponent"]
         if COMBAT_STATE[opponent_id]["protect_choice"]:
-            # Оба выбрали защиту → переходим к атаке
             ask_attack(user_id, chat_id)
-            ask_attack(opponent_id, opponent_id)  # Отправим противнику в личку
+            ask_attack(opponent_id, opponent_id)
             bot.answer_callback_query(call.id, "✅ Защита выбрана")
-else:
-  
+        else:
+            bot.answer_callback_query(call.id, "✅ Защита выбрана. Жди противника.")
+        return
+
+    if data.startswith("attack_"):
+        if user_id not in COMBAT_STATE:
+            bot.answer_callback_query(call.id, "❌ Ты не в бою")
+            return
+        choice = data.split("_")[1]
+        COMBAT_STATE[user_id]["attack_choice"] = choice
+        opponent_id = COMBAT_STATE[user_id]["opponent"]
+        if COMBAT_STATE[opponent_id]["attack_choice"]:
+            resolve_battle(user_id, opponent_id, chat_id)
+        else:
+            bot.answer_callback_query(call.id, "✅ Атака выбрана. Жди противника.")
+        return
+
+def ask_protect(user_id, chat_id):
+    kb = InlineKeyboardMarkup(row_width=1)
+    for combo in PROTECT_COMBOS:
+        kb.add(InlineKeyboardButton(f"🛡️ {combo.replace('_', 
