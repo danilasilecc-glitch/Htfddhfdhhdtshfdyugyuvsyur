@@ -6,18 +6,15 @@ import threading
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === КОНФИГ ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан в переменных окружения!")
+    raise ValueError("BOT_TOKEN не задан")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# === БАЗА ДАННЫХ ===
 conn = sqlite3.connect("rpg_data.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Создаём таблицы
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS players (
     user_id INTEGER PRIMARY KEY,
@@ -61,7 +58,6 @@ CREATE TABLE IF NOT EXISTS shop (
 )
 ''')
 
-# Добавляем товары в магазин (если пусто)
 cursor.execute("SELECT COUNT(*) FROM shop")
 if cursor.fetchone()[0] == 0:
     items = [
@@ -78,12 +74,13 @@ if cursor.fetchone()[0] == 0:
         ("Меч дракона", "weapon", "attack", 8, 350)
     ]
     for item in items:
-        cursor.execute("INSERT INTO shop (name, type, stat, value, price) VALUES (?, ?, ?, ?, ?)", item)
+        cursor.execute(
+            "INSERT INTO shop (name, type, stat, value, price) VALUES (?, ?, ?, ?, ?)",
+            item
+        )
     conn.commit()
 
 conn.commit()
-
-# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
 
 def get_player(user_id):
     cursor.execute("SELECT * FROM players WHERE user_id = ?", (user_id,))
@@ -100,12 +97,10 @@ def update_exp(user_id, exp_gain):
     cursor.execute("SELECT exp, exp_to_next, level FROM players WHERE user_id = ?", (user_id,))
     exp, exp_to_next, level = cursor.fetchone()
     new_exp = exp + exp_gain
-    leveled_up = False
     while new_exp >= exp_to_next:
         new_exp -= exp_to_next
         level += 1
         exp_to_next = int(exp_to_next * 1.5)
-        leveled_up = True
         cursor.execute(
             "UPDATE players SET max_hp = max_hp + 10, attack = attack + 2, defense = defense + 1 WHERE user_id = ?",
             (user_id,)
@@ -115,10 +110,13 @@ def update_exp(user_id, exp_gain):
         (new_exp, exp_to_next, level, user_id)
     )
     conn.commit()
-    return leveled_up, level
+    return level
 
 def get_total_armor(user_id):
-    cursor.execute("SELECT head_armor, chest_armor, legs_armor, boots_armor FROM players WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT head_armor, chest_armor, legs_armor, boots_armor FROM players WHERE user_id = ?",
+        (user_id,)
+    )
     armor = cursor.fetchone()
     total = 0
     for slot in armor:
@@ -160,8 +158,6 @@ def get_player_stats(user_id):
         "weapon": p[16]
     }
 
-# === КЛАВИАТУРЫ ===
-
 def main_menu():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -183,8 +179,6 @@ def duel_menu():
     )
     return kb
 
-# === ЗАЩИТА И АТАКА ===
-
 PROTECT_COMBOS = {
     "head_chest": {"head": True, "chest": True, "belt": False, "hands": False, "legs": False},
     "chest_belt": {"head": False, "chest": True, "belt": True, "hands": False, "legs": False},
@@ -202,9 +196,19 @@ ATTACK_COMBOS = {
 COMBAT_STATE = {}
 
 def start_battle(player1, player2):
-    COMBAT_STATE[player1] = {"opponent": player2, "step": "protect", "protect_choice": None, "attack_choice": None}
-    COMBAT_STATE[player2] = {"opponent": player1, "step": "protect", "protect_choice": None, "attack_choice": None}
-    return f"⚔️ **БОЙ НАЧАЛСЯ!**\n\n👤 {player1} vs 👤 {player2}"
+    COMBAT_STATE[player1] = {
+        "opponent": player2,
+        "step": "protect",
+        "protect_choice": None,
+        "attack_choice": None
+    }
+    COMBAT_STATE[player2] = {
+        "opponent": player1,
+        "step": "protect",
+        "protect_choice": None,
+        "attack_choice": None
+    }
+    return "⚔️ БОЙ НАЧАЛСЯ!\n\n👤 {} vs 👤 {}".format(player1, player2)
 
 def calculate_damage(attack_parts, protect_parts, base_attack, defense):
     total_damage = 0
@@ -218,32 +222,25 @@ def calculate_damage(attack_parts, protect_parts, base_attack, defense):
         total_damage += damage
     return total_damage
 
-# === ОБРАБОТЧИКИ КОМАНД ===
-
 @bot.message_handler(commands=['start'])
 def start_cmd(msg):
     user_id = msg.from_user.id
-    username = msg.from_user.username or f"User{user_id}"
+    username = msg.from_user.username or "User{}".format(user_id)
     if not get_player(user_id):
         create_player(user_id, username)
         bot.send_message(
             user_id,
-            f"🎮 **Добро пожаловать в RPG Дуэль!**\n\n"
-            f"Твой ник: @{username}\n"
-            f"Ты получил 50 монет и базовое снаряжение.\n"
-            f"Используй меню для начала игры.",
+            "🎮 Добро пожаловать в RPG Дуэль!\n\nТвой ник: @{}\nТы получил 50 монет и базовое снаряжение.\nИспользуй меню для начала игры.".format(username),
             parse_mode='Markdown',
             reply_markup=main_menu()
         )
     else:
         bot.send_message(
             user_id,
-            "🎮 **С возвращением, воин!**",
+            "🎮 С возвращением, воин!",
             parse_mode='Markdown',
             reply_markup=main_menu()
         )
-
-# === ОБРАБОТКА КНОПОК ===
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle(call):
@@ -253,24 +250,21 @@ def handle(call):
     msg_id = call.message.message_id
 
     if data == "back_main":
-        bot.edit_message_text("🎮 **Главное меню**", chat_id, msg_id, parse_mode='Markdown', reply_markup=main_menu())
+        bot.edit_message_text("🎮 Главное меню", chat_id, msg_id, reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
 
     if data == "help":
-        bot.edit_message_text(
-            "📊 **Помощь**\n\n"
-            "⚔️ **Дуэль** — найди противника и сразись.\n"
+        text = (
+            "📊 Помощь\n\n"
+            "⚔️ Дуэль — найди противника и сразись.\n"
             "🛡️ Защита и атака выбираются по частям тела.\n"
             "💰 За победу даётся опыт и монеты.\n"
             "🏆 Топ показывает лучших игроков.\n"
             "📜 Кланы — создавай и вступай в кланы.\n"
-            "🏪 Магазин — покупай снаряжение.",
-            chat_id,
-            msg_id,
-            parse_mode='Markdown',
-            reply_markup=main_menu()
+            "🏪 Магазин — покупай снаряжение."
         )
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
 
@@ -280,21 +274,36 @@ def handle(call):
             bot.answer_callback_query(call.id, "❌ Ошибка профиля")
             return
         text = (
-            f"👤 **Профиль**\n\n"
-            f"Имя: {stats['display_name']}\n"
-            f"Уровень: {stats['level']}\n"
-            f"Опыт: {stats['exp']}/{stats['exp_to_next']}\n"
-            f"❤️ Здоровье: {stats['hp']}/{stats['max_hp']}\n"
-            f"⚔️ Атака: {stats['attack']}\n"
-            f"🛡️ Защита: {stats['defense']}\n"
-            f"💰 Монеты: {stats['coins']}\n"
-            f"🗡️ Оружие: {stats['weapon'] or 'Нет'}\n"
-            f"🪖 Шлем: {stats['head_armor'] or 'Нет'}\n"
-            f"👕 Нагрудник: {stats['chest_armor'] or 'Нет'}\n"
-            f"👖 Поножи: {stats['legs_armor'] or 'Нет'}\n"
-            f"👢 Ботинки: {stats['boots_armor'] or 'Нет'}"
+            "👤 Профиль\n\n"
+            "Имя: {}\n"
+            "Уровень: {}\n"
+            "Опыт: {}/{}\n"
+            "❤️ Здоровье: {}/{}\n"
+            "⚔️ Атака: {}\n"
+            "🛡️ Защита: {}\n"
+            "💰 Монеты: {}\n"
+            "🗡️ Оружие: {}\n"
+            "🪖 Шлем: {}\n"
+            "👕 Нагрудник: {}\n"
+            "👖 Поножи: {}\n"
+            "👢 Ботинки: {}"
+        ).format(
+            stats['display_name'],
+            stats['level'],
+            stats['exp'],
+            stats['exp_to_next'],
+            stats['hp'],
+            stats['max_hp'],
+            stats['attack'],
+            stats['defense'],
+            stats['coins'],
+            stats['weapon'] or 'Нет',
+            stats['head_armor'] or 'Нет',
+            stats['chest_armor'] or 'Нет',
+            stats['legs_armor'] or 'Нет',
+            stats['boots_armor'] or 'Нет'
         )
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode='Markdown', reply_markup=main_menu())
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
 
@@ -303,12 +312,10 @@ def handle(call):
         items = cursor.fetchall()
         kb = InlineKeyboardMarkup(row_width=2)
         for item in items:
-            kb.add(InlineKeyboardButton(
-                f"🛒 {item[1]} ({item[4]}) - {item[5]}💰",
-                callback_data=f"buy_{item[0]}"
-            ))
+            btn_text = "🛒 {} ({}) - {}💰".format(item[1], item[4], item[5])
+            kb.add(InlineKeyboardButton(btn_text, callback_data="buy_{}".format(item[0])))
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="back_main"))
-        bot.edit_message_text("🏪 **Магазин**\n\nВыбери предмет для покупки:", chat_id, msg_id, reply_markup=kb)
+        bot.edit_message_text("🏪 Магазин\n\nВыбери предмет для покупки:", chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -322,28 +329,31 @@ def handle(call):
         name, price, stat, value, type_ = item
         player = get_player(user_id)
         if player[6] < price:
-            bot.answer_callback_query(call.id, f"❌ Не хватает монет! Нужно {price}")
+            bot.answer_callback_query(call.id, "❌ Не хватает монет! Нужно {}".format(price))
             return
-        cursor.execute(f"SELECT {type_} FROM players WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT {} FROM players WHERE user_id = ?".format(type_), (user_id,))
         current = cursor.fetchone()[0]
         if current:
             cursor.execute("SELECT price FROM shop WHERE name = ?", (current,))
             old_price = cursor.fetchone()[0]
             if old_price:
                 cursor.execute("UPDATE players SET coins = coins + ? WHERE user_id = ?", (old_price // 2, user_id))
-        cursor.execute(f"UPDATE players SET coins = coins - ?, {type_} = ? WHERE user_id = ?", (price, name, user_id))
+        cursor.execute(
+            "UPDATE players SET coins = coins - ?, {} = ? WHERE user_id = ?".format(type_),
+            (price, name, user_id)
+        )
         conn.commit()
-        bot.answer_callback_query(call.id, f"✅ Куплено: {name}!")
+        bot.answer_callback_query(call.id, "✅ Куплено: {}!".format(name))
         handle(call)
         return
 
     if data == "top":
         cursor.execute("SELECT display_name, level, exp, coins FROM players ORDER BY level DESC, exp DESC LIMIT 10")
         top = cursor.fetchall()
-        text = "🏆 **Топ игроков**\n\n"
+        text = "🏆 Топ игроков\n\n"
         for i, (name, level, exp, coins) in enumerate(top, 1):
-            text += f"{i}. {name} — Уровень {level}, Опыт {exp}, 🪙 {coins}\n"
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode='Markdown', reply_markup=main_menu())
+            text += "{}. {} — Уровень {}, Опыт {}, 🪙 {}\n".format(i, name, level, exp, coins)
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=main_menu())
         bot.answer_callback_query(call.id)
         return
 
@@ -355,7 +365,7 @@ def handle(call):
             InlineKeyboardButton("➕ Создать клан", callback_data="create_clan"),
             InlineKeyboardButton("🔙 Назад", callback_data="back_main")
         )
-        bot.edit_message_text("📜 **Кланы**\n\nВыбери действие:", chat_id, msg_id, parse_mode='Markdown', reply_markup=kb)
+        bot.edit_message_text("📜 Кланы\n\nВыбери действие:", chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -372,15 +382,15 @@ def handle(call):
             bot.answer_callback_query(call.id, "❌ Клан не найден")
             return
         members = clan[2].split(",") if clan[2] else []
-        text = f"📋 **Клан: {clan[0]}**\n\n👑 Лидер: {clan[1]}\n👥 Участников: {len(members)}\n\nСписок участников:\n"
+        text = "📋 Клан: {}\n\n👑 Лидер: {}\n👥 Участников: {}\n\nСписок участников:\n".format(clan[0], clan[1], len(members))
         for m in members:
             cursor.execute("SELECT display_name FROM players WHERE user_id = ?", (int(m),))
             name = cursor.fetchone()
             if name:
-                text += f"- {name[0]}\n"
+                text += "- {}\n".format(name[0])
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="clans"))
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode='Markdown', reply_markup=kb)
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -388,14 +398,15 @@ def handle(call):
         cursor.execute("SELECT id, name, leader_id FROM clans ORDER BY id DESC LIMIT 20")
         clans = cursor.fetchall()
         if not clans:
-            bot.edit_message_text("📜 **Список кланов**\n\nНет созданных кланов.", chat_id, msg_id, reply_markup=main_menu())
+            bot.edit_message_text("📜 Список кланов\n\nНет созданных кланов.", chat_id, msg_id, reply_markup=main_menu())
             bot.answer_callback_query(call.id)
             return
         kb = InlineKeyboardMarkup(row_width=1)
         for clan in clans:
-            kb.add(InlineKeyboardButton(f"📌 {clan[1]} (лидер: {clan[2]})", callback_data=f"clan_info_{clan[0]}"))
+            btn_text = "📌 {} (лидер: {})".format(clan[1], clan[2])
+            kb.add(InlineKeyboardButton(btn_text, callback_data="clan_info_{}".format(clan[0])))
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="clans"))
-        bot.edit_message_text("📜 **Список кланов**\n\nВыбери клан для просмотра:", chat_id, msg_id, reply_markup=kb)
+        bot.edit_message_text("📜 Список кланов\n\nВыбери клан для просмотра:", chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -407,17 +418,17 @@ def handle(call):
             bot.answer_callback_query(call.id, "❌ Клан не найден")
             return
         members = clan[2].split(",") if clan[2] else []
-        text = f"📋 **Клан: {clan[0]}**\n\n👑 Лидер: {clan[1]}\n👥 Участников: {len(members)}\n\nСписок участников:\n"
+        text = "📋 Клан: {}\n\n👑 Лидер: {}\n👥 Участников: {}\n\nСписок участников:\n".format(clan[0], clan[1], len(members))
         for m in members[:10]:
             cursor.execute("SELECT display_name FROM players WHERE user_id = ?", (int(m),))
             name = cursor.fetchone()
             if name:
-                text += f"- {name[0]}\n"
+                text += "- {}\n".format(name[0])
         kb = InlineKeyboardMarkup()
         if len(members) < 2:
-            kb.add(InlineKeyboardButton("📥 Вступить в клан", callback_data=f"join_clan_{clan_id}"))
+            kb.add(InlineKeyboardButton("📥 Вступить в клан", callback_data="join_clan_{}".format(clan_id)))
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="clan_list"))
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode='Markdown', reply_markup=kb)
+        bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -428,7 +439,7 @@ def handle(call):
         if members and str(user_id) in members.split(","):
             bot.answer_callback_query(call.id, "❌ Ты уже в этом клане")
             return
-        new_members = f"{members},{user_id}" if members else str(user_id)
+        new_members = "{},{}".format(members, user_id) if members else str(user_id)
         cursor.execute("UPDATE clans SET members = ? WHERE id = ?", (new_members, clan_id))
         cursor.execute("UPDATE players SET clan_id = ? WHERE user_id = ?", (clan_id, user_id))
         conn.commit()
@@ -437,13 +448,13 @@ def handle(call):
         return
 
     if data == "create_clan":
-        bot.send_message(chat_id, "📝 **Создание клана**\n\nВведи название клана (от 3 до 15 символов).")
+        bot.send_message(chat_id, "📝 Создание клана\n\nВведи название клана (от 3 до 15 символов).")
         bot.register_next_step_handler(call.message, create_clan_step)
         bot.answer_callback_query(call.id)
         return
 
     if data == "duel":
-        bot.edit_message_text("⚔️ **Дуэль**\n\nНайди противника и сразись!", chat_id, msg_id, parse_mode='Markdown', reply_markup=duel_menu())
+        bot.edit_message_text("⚔️ Дуэль\n\nНайди противника и сразись!", chat_id, msg_id, reply_markup=duel_menu())
         bot.answer_callback_query(call.id)
         return
 
@@ -455,9 +466,9 @@ def handle(call):
             return
         kb = InlineKeyboardMarkup(row_width=1)
         for opp in opponents:
-            kb.add(InlineKeyboardButton(f"⚔️ {opp[1]}", callback_data=f"challenge_{opp[0]}"))
+            kb.add(InlineKeyboardButton("⚔️ {}".format(opp[1]), callback_data="challenge_{}".format(opp[0])))
         kb.add(InlineKeyboardButton("🔙 Назад", callback_data="duel"))
-        bot.edit_message_text("⚔️ **Выбери противника:**", chat_id, msg_id, reply_markup=kb)
+        bot.edit_message_text("⚔️ Выбери противника:", chat_id, msg_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
         return
 
@@ -515,4 +526,5 @@ def handle(call):
 def ask_protect(user_id, chat_id):
     kb = InlineKeyboardMarkup(row_width=1)
     for combo in PROTECT_COMBOS:
-        kb.add(InlineKeyboardButton(f"🛡️ {combo.replace('_', 
+        btn_text = "🛡️ {}".format(combo.replace('_', ' + '))
+        kb.add(InlineKeyboardButton(btn_text, callback_data="protect_{}".format(com
