@@ -469,25 +469,12 @@ def handle(call):
         return
 
 def ask_protect(user_id, chat_id):
+def ask_protect(user_id, chat_id):
     kb = InlineKeyboardMarkup(row_width=1)
     for combo in PROTECT_COMBOS:
         btn_text = "🛡️ {}".format(combo.replace('_', ' + '))
         kb.add(InlineKeyboardButton(btn_text, callback_data="protect_{}".format(combo)))
     bot.send_message(user_id, "🛡️ Выбери защиту (2 части тела):", reply_markup=kb)
-
-def ask_attack(user_id, chat_id):
-    kb = InlineKeyboardMarkup(row_width=1)
-        for combo in PROTECT_COMBOS:
-        btn_text = "🛡️ {}".format(combo.replace('_', ' + '))
-        kb.add(InlineKeyboardButton(btn_text, callback_data="protect_{}".format(combo)))
-    bot.send_message(user_id, "🛡️ Выбери защиту (2 части тела):", reply_markup=kb)
-
-def ask_attack(user_id, chat_id):
-    kb = InlineKeyboardMarkup(row_width=1)
-    for combo in ATTACK_COMBOS:
-        btn_text = "⚔️ {}".format(combo.replace('_', ' + '))
-        kb.add(InlineKeyboardButton(btn_text, callback_data="attack_{}".format(combo)))
-    bot.send_message(user_id, "⚔️ Выбери атаку (2 части тела):", reply_markup=kb)
 
 def resolve_battle(player1, player2, chat_id):
     p1_protect = COMBAT_STATE[player1]["protect_choice"]
